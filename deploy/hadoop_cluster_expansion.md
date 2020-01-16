@@ -134,9 +134,22 @@ useradd --system --home=/opt/cm-5.16.2/run/cloudera-scm-server/ --no-create-home
 > agent node
 
 ```shell
-scp -P22022 -r /home/app/cm-5.16.2 root@hadoop-prod09:/home/app/
+for i in 192; do
+    ip="10.63.82."$i
+    scp -P22022 -r /home/app/cm-5.16.2 root@${ip}:/home/app/ &&
+    # scp -P22022 /home/app/cm5162.tar.gz root@root@${ip}:/home/soft/
+    ssh -p22022 root@$ip "
+systemctl status iptables
+systemctl stop iptables
+echo never > /sys/kernel/mm/transparent_hugepage/defrag
+echo never > /sys/kernel/mm/transparent_hugepage/enabled
+echo 0 > /proc/sys/vm/swappiness
 
-# scp -P22022 /home/app/cm5162.tar.gz root@hadoop-prod09:/home/soft/
+echo '
+# cdh
+echo never > /sys/kernel/mm/transparent_hugepage/defrag
+echo never > /sys/kernel/mm/transparent_hugepage/enabled
+' >> /etc/rc.local
 
 mkdir -p /home/app/dfs &&
 ln -s /home/app/dfs /dfs &&
@@ -149,7 +162,10 @@ ln -s /home/app/cm-5.16.2 /opt/cm-5.16.2 &&
 mkdir -p /home/app/cloudera &&
 ln -s /home/app/cloudera /opt/cloudera &&
 
-useradd --system --home=/opt/cm-5.16.2/run/cloudera-scm-server/ --no-create-home --shell=/bin/false --comment "Cloudera SCM User" cloudera-scm
+useradd --system --home=/opt/cm-5.16.2/run/cloudera-scm-server/ --no-create-home --shell=/bin/false --comment 'Cloudera SCM User' cloudera-scm &&
 
 /opt/cm-5.16.2/etc/init.d/cloudera-scm-agent start
+    " &&
+    echo "$ip complete"
+done
 ```
