@@ -19,6 +19,15 @@ ssh-keygen &&
 cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys &&
 chmod 600 ~/.ssh/authorized_keys
 
+key=`cat ~/.ssh/id_rsa.pub`
+for i in {01..10}; do
+    ip="hadoop-prod"$i
+    ssh -p22022 root@$ip <<EOF
+echo "$key" >> ~/.ssh/authorized_keys
+EOF
+    echo "$ip complete"
+done
+
 # scp -P22022 ~/.ssh/authorized_keys root@10.63.80.105:~/.ssh/
 # scp -P22022 ~/.ssh/authorized_keys root@10.63.80.106:~/.ssh/
 # scp -P22022 ~/.ssh/authorized_keys root@10.63.80.107:~/.ssh/
