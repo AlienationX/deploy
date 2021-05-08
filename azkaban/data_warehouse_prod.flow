@@ -1,0 +1,2707 @@
+config:
+  # 默认空值参数尽量赋值空字符串，否则会报如下错误
+  # Failed to build job executor for job startCould not find variable substitution for variable(s) [command.4->param.date]
+  param.date: ""
+  param.inPath: /tmp/wordcountpigin
+  param.outPath: /tmp/wordcountpigout
+
+  # param.db: ""
+  param.project: ""
+  param.day: "day"
+  param.week: "week"
+  param.month: "month"
+  param.quarter: "quarter"
+  param.year: "year"
+  param.startDate: ""
+  param.endDate: ""
+  param.init: "0"
+  param.writeLog: "1"
+  param.send: "1"
+
+  project.root: /home/work
+  project.warehouse: ${project.root}/azkaban_warehouse
+  project.ods: ${project.warehouse}/ods
+  project.dwb: ${project.warehouse}/dwb
+  project.dws: ${project.warehouse}/dws
+  project.share: ${project.warehouse}/share
+
+  command.python3: /home/work/app/python3/bin/python3
+  command.datax: "python /home/work/app/datax/bin/datax.py"
+
+  # 可以使用具有hadoop和hive等权限的账户执行
+  # user.to.proxy property was not set, defaulting to submit user work（默认使用azkaban登录的账户，最好指定代理用户，以支持跨用户执行）
+  user.to.proxy: work
+
+  retries: 6
+  retry.backoff: 60000
+  failure.action: FINISH_ALL_POSSIBLE
+  # failure.emails:
+  # success.emails:
+  # notify.emails: a@163.com,b.@163.com
+
+nodes:
+  - name: end
+    type: command
+    config:
+      command: bash ${project.warehouse}/refresh_impala.sh -p ${param.project}
+    dependsOn:
+      - send_email
+  - name: send_email
+    type: command
+    config:
+      command: bash ${project.warehouse}/send_mail/send.sh ${param.project} "email_task_logs_dw" "dw任务清单" ${param.send}
+    dependsOn:
+      - write_workflow_end_log
+    condition: all_done
+  - name: write_workflow_end_log
+    type: command
+    config:
+      command: bash ${project.warehouse}/write_workflow_end_log.sh -p ${param.project} -w ${param.writeLog} dws_flow_status
+    dependsOn:
+      - work_flow_second
+  
+  # 第二批次
+  - name: work_flow_second
+    type: flow
+    nodes:
+      - name: app_bigtable
+        type: command
+        config:
+          command: bash ${project.dws}/app_bigtable.sh -p ${param.project} -i ${param.init} # -w ${param.writeLog}
+      - name: dwb_death_record
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_death_record.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+      - name: dwb_his_facility
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_his_facility.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+      - name: dwb_his_medical_equipment
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_his_medical_equipment.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+      - name: dwb_his_consult
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_his_consult.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+      - name: dwb_his_depttrant
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_his_depttrant.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+      - name: dwb_his_mz_drugdispen_detail
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_his_mz_drugdispen_detail.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+      - name: dwb_his_mz_drugdispen_info
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_his_mz_drugdispen_info.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+      - name: dwb_his_ward_drugdispen
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_his_ward_drugdispen.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+      - name: dwb_disease_procedure1
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_disease_procedure1.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+      - name: dwb_disease_procedure
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_disease_procedure.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+      - name: dwb_discharge
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_discharge.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+      - name: dwb_admmision
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_admmision.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+      - name: dws_checkdate_leavedate
+        type: command
+        config:
+          command: bash ${project.dws}/dws_checkdate_leavedate.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+      - name: dws_all_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_all_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_all_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_all_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_all_sum_d
+      - name: dws_all_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_all_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_all_sum_w
+      - name: dws_all_sum_q
+        type: command
+        config:
+          command: echo "skip quarter" # command: bash ${project.dws}/dws_all_sum.sh -p ${param.project} -i ${param.init} -d ${param.quarter} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_all_sum_m
+      - name: dws_all_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_all_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_all_sum_q
+      - name: dws_dept_chargeitem_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_dept_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_dept_chargeitem_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_dept_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_dept_chargeitem_sum_d
+      - name: dws_dept_chargeitem_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_dept_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_dept_chargeitem_sum_w
+      - name: dws_dept_chargeitem_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_dept_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_dept_chargeitem_sum_m
+      - name: dws_dept_diagclass_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_dept_diagclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_dept_diagclass_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_dept_diagclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_dept_diagclass_sum_d
+      - name: dws_dept_diagclass_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_dept_diagclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_dept_diagclass_sum_w
+      - name: dws_dept_diagclass_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_dept_diagclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_dept_diagclass_sum_m
+      - name: dws_dept_drugclass_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_dept_drugclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_dept_drugclass_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_dept_drugclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_dept_drugclass_sum_d
+      - name: dws_dept_drugclass_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_dept_drugclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_dept_drugclass_sum_w
+      - name: dws_dept_drugclass_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_dept_drugclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_dept_drugclass_sum_m
+      - name: dws_dept_treatclass_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_dept_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_dept_treatclass_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_dept_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_dept_treatclass_sum_d
+      - name: dws_dept_treatclass_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_dept_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_dept_treatclass_sum_w
+      - name: dws_dept_treatclass_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_dept_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_dept_treatclass_sum_m
+      - name: dws_diaggroup_area_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_diaggroup_area_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_diaggroup_area_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_diaggroup_area_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_diaggroup_area_sum_d
+      - name: dws_diaggroup_area_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_diaggroup_area_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_diaggroup_area_sum_w
+      - name: dws_diaggroup_area_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_diaggroup_area_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_diaggroup_area_sum_m
+      - name: dws_diaggroup_doctor_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_diaggroup_doctor_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_diaggroup_doctor_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_diaggroup_doctor_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_diaggroup_doctor_sum_d
+      - name: dws_diaggroup_doctor_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_diaggroup_doctor_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_diaggroup_doctor_sum_w
+      - name: dws_diaggroup_doctor_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_diaggroup_doctor_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_diaggroup_doctor_sum_m
+      - name: dws_diaggroup_org_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_diaggroup_org_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_diaggroup_org_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_diaggroup_org_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_diaggroup_org_sum_d
+      - name: dws_diaggroup_org_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_diaggroup_org_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_diaggroup_org_sum_w
+      - name: dws_diaggroup_org_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_diaggroup_org_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_diaggroup_org_sum_m
+      - name: dws_diaggroup_owntype_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_diaggroup_owntype_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_diaggroup_owntype_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_diaggroup_owntype_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_diaggroup_owntype_sum_d
+      - name: dws_diaggroup_owntype_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_diaggroup_owntype_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_diaggroup_owntype_sum_w
+      - name: dws_diaggroup_owntype_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_diaggroup_owntype_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_diaggroup_owntype_sum_m
+      - name: dws_diaggroup_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_diaggroup_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_diaggroup_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_diaggroup_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_diaggroup_sum_d
+      - name: dws_diaggroup_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_diaggroup_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_diaggroup_sum_w
+      - name: dws_diaggroup_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_diaggroup_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_diaggroup_sum_m
+      - name: dws_disease_drugdist_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_disease_drugdist.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_disease_drugdist_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_disease_drugdist.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_disease_drugdist_d
+      - name: dws_disease_drugdist_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_disease_drugdist.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_disease_drugdist_w
+      - name: dws_disease_drugdist_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_disease_drugdist.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_disease_drugdist_m
+      - name: dws_disease_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_disease_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_disease_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_disease_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_disease_sum_d
+      - name: dws_disease_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_disease_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_disease_sum_w
+      - name: dws_disease_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_disease_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_disease_sum_m
+      - name: dws_doctor_chargeitem_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_doctor_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_doctor_chargeitem_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_doctor_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_doctor_chargeitem_sum_d
+      - name: dws_doctor_chargeitem_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_doctor_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_doctor_chargeitem_sum_w
+      - name: dws_doctor_chargeitem_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_doctor_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_doctor_chargeitem_sum_m
+      - name: dws_doctor_drugclass_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_doctor_drugclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_doctor_drugclass_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_doctor_drugclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_doctor_drugclass_sum_d
+      - name: dws_doctor_drugclass_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_doctor_drugclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_doctor_drugclass_sum_w
+      - name: dws_doctor_drugclass_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_doctor_drugclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_doctor_drugclass_sum_m
+      - name: dws_doctor_treatclass_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_doctor_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_doctor_treatclass_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_doctor_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_doctor_treatclass_sum_d
+      - name: dws_doctor_treatclass_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_doctor_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_doctor_treatclass_sum_w
+      - name: dws_doctor_treatclass_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_doctor_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_doctor_treatclass_sum_m
+      - name: dws_hosplevel_drug_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_hosplevel_drug_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+        # dependsOn:
+        # - dwb_charge_detail
+      - name: dws_hosplevel_drug_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_hosplevel_drug_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_hosplevel_drug_sum_d
+      - name: dws_hosplevel_drug_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_hosplevel_drug_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_hosplevel_drug_sum_w
+      - name: dws_hosplevel_drug_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_hosplevel_drug_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_hosplevel_drug_sum_m
+      - name: dws_hosplevel_disease_item_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_hosplevel_disease_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_hosplevel_disease_item_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_hosplevel_disease_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_hosplevel_disease_item_sum_d
+      - name: dws_hosplevel_disease_item_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_hosplevel_disease_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_hosplevel_disease_item_sum_w
+      - name: dws_hosplevel_disease_item_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_hosplevel_disease_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_hosplevel_disease_item_sum_m
+      - name: dws_item_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_item_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_item_sum_d
+      - name: dws_item_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_item_sum_w
+      - name: dws_item_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_item_sum_m
+      - name: dws_org_berth_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_berth_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_org_berth_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_org_berth_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_berth_sum_d
+      - name: dws_org_berth_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_berth_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_berth_sum_w
+      - name: dws_org_berth_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_berth_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_org_berth_sum_m
+      - name: dws_org_busstype_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_busstype_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_org_busstype_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_org_busstype_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_busstype_sum_d
+      - name: dws_org_busstype_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_busstype_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_busstype_sum_w
+      - name: dws_org_busstype_sum_q
+        type: command
+        config:
+          command: echo "skip quarter" # command: bash ${project.dws}/dws_org_busstype_sum.sh -p ${param.project} -i ${param.init} -d ${param.quarter} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_busstype_sum_m
+      - name: dws_org_busstype_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_busstype_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_org_busstype_sum_q
+      - name: dws_org_diagclass_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_diagclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_org_diagclass_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_org_diagclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_diagclass_sum_d
+      - name: dws_org_diagclass_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_diagclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_diagclass_sum_w
+      - name: dws_org_diagclass_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_diagclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_org_diagclass_sum_m
+      - name: dws_org_drugclass_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_drugclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_org_drugclass_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_org_drugclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_drugclass_sum_d
+      - name: dws_org_drugclass_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_drugclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_drugclass_sum_w
+      - name: dws_org_drugclass_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_drugclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_org_drugclass_sum_m
+      - name: dws_org_hosplevel_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_hosplevel_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_org_hosplevel_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_org_hosplevel_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_hosplevel_sum_d
+      - name: dws_org_hosplevel_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_hosplevel_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_hosplevel_sum_w
+      - name: dws_org_hosplevel_sum_q
+        type: command
+        config:
+          command: echo "skip quarter" # command: bash ${project.dws}/dws_org_hosplevel_sum.sh -p ${param.project} -i ${param.init} -d ${param.quarter} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_hosplevel_sum_m
+      - name: dws_org_hosplevel_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_hosplevel_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_org_hosplevel_sum_q
+      - name: dws_org_owntype_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_owntype_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_org_owntype_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_org_owntype_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_owntype_sum_d
+      - name: dws_org_owntype_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_owntype_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_owntype_sum_w
+      - name: dws_org_owntype_sum_q
+        type: command
+        config:
+          command: echo "skip quarter" # command: bash ${project.dws}/dws_org_owntype_sum.sh -p ${param.project} -i ${param.init} -d ${param.quarter} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_owntype_sum_m
+      - name: dws_org_owntype_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_owntype_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_org_owntype_sum_q
+      - name: dws_org_disease_item_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_disease_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_org_disease_item_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_org_disease_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_disease_item_sum_d
+      - name: dws_org_disease_item_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_disease_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_disease_item_sum_w
+      - name: dws_org_disease_item_sum_q
+        type: command
+        config:
+          command: echo "skip quarter" # command: bash ${project.dws}/dws_org_disease_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.quarter} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_disease_item_sum_m
+      - name: dws_org_disease_item_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_disease_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_org_disease_item_sum_q
+      - name: dws_org_treatclass_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_org_treatclass_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_org_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_treatclass_sum_d
+      - name: dws_org_treatclass_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_treatclass_sum_w
+      - name: dws_org_treatclass_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_org_treatclass_sum_m
+      - name: dws_patient_1visit_treatclasssum
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_1visit_treatclasssum.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+      - name: dws_patient_dept_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_dept_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_patient_dept_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_patient_dept_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_dept_sum_d
+      - name: dws_patient_dept_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_dept_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_dept_sum_w
+      - name: dws_patient_dept_sum_q
+        type: command
+        config:
+          command: echo "skip quarter" # command: bash ${project.dws}/dws_patient_dept_sum.sh -p ${param.project} -i ${param.init} -d ${param.quarter} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_dept_sum_m
+      - name: dws_patient_dept_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_dept_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_patient_dept_sum_q
+      - name: dws_patient_diaggroup_drugclass_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_diaggroup_drugclass.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_patient_diaggroup_drugclass_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_patient_diaggroup_drugclass.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_diaggroup_drugclass_d
+      - name: dws_patient_diaggroup_drugclass_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_diaggroup_drugclass.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_diaggroup_drugclass_w
+      - name: dws_patient_diaggroup_drugclass_q
+        type: command
+        config:
+          command: echo "skip quarter" # command: bash ${project.dws}/dws_patient_diaggroup_drugclass.sh -p ${param.project} -i ${param.init} -d ${param.quarter} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_diaggroup_drugclass_m
+      - name: dws_patient_diaggroup_drugclass_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_diaggroup_drugclass.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_patient_diaggroup_drugclass_q
+      - name: dws_patient_diaggroup_org_visit_cnt_tmp
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_diaggroup_org_visit_cnt_tmp.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+      - name: dws_patient_diaggroup_org_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_diaggroup_org_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_diaggroup_org_visit_cnt_tmp
+      - name: dws_patient_diaggroup_org_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_patient_diaggroup_org_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_diaggroup_org_sum_d
+      - name: dws_patient_diaggroup_org_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_diaggroup_org_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_diaggroup_org_sum_w
+      - name: dws_patient_diaggroup_org_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_diaggroup_org_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_patient_diaggroup_org_sum_m
+      - name: dws_patient_diaggroup_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_diaggroup_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_patient_diaggroup_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_patient_diaggroup_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_diaggroup_sum_d
+      - name: dws_patient_diaggroup_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_diaggroup_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_diaggroup_sum_w
+      - name: dws_patient_diaggroup_sum_q
+        type: command
+        config:
+          command: echo "skip quarter" # command: bash ${project.dws}/dws_patient_diaggroup_sum.sh -p ${param.project} -i ${param.init} -d ${param.quarter} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_diaggroup_sum_m
+      - name: dws_patient_diaggroup_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_diaggroup_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_patient_diaggroup_sum_q
+      - name: dws_patient_diaggroup_treatclass_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_diaggroup_treatclass.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_patient_diaggroup_treatclass_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_patient_diaggroup_treatclass.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_diaggroup_treatclass_d
+      - name: dws_patient_diaggroup_treatclass_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_diaggroup_treatclass.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_diaggroup_treatclass_w
+      - name: dws_patient_diaggroup_treatclass_q
+        type: command
+        config:
+          command: echo "skip quarter" # command: bash ${project.dws}/dws_patient_diaggroup_treatclass.sh -p ${param.project} -i ${param.init} -d ${param.quarter} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_diaggroup_treatclass_m
+      - name: dws_patient_diaggroup_treatclass_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_diaggroup_treatclass.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_patient_diaggroup_treatclass_q
+      - name: dws_patient_doctor_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_doctor_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_patient_doctor_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_patient_doctor_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_doctor_sum_d
+      - name: dws_patient_doctor_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_doctor_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_doctor_sum_w
+      - name: dws_patient_doctor_sum_q
+        type: command
+        config:
+          command: echo "skip quarter" # command: bash ${project.dws}/dws_patient_doctor_sum.sh -p ${param.project} -i ${param.init} -d ${param.quarter} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_doctor_sum_m
+      - name: dws_patient_doctor_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_doctor_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_patient_doctor_sum_q
+      - name: dws_patient_doctor_item_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_doctor_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_patient_doctor_item_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_patient_doctor_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_doctor_item_sum_d
+      - name: dws_patient_doctor_item_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_doctor_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_doctor_item_sum_w
+      - name: dws_patient_doctor_item_sum_q
+        type: command
+        config:
+          command: echo "skip quarter" # command: bash ${project.dws}/dws_patient_doctor_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.quarter} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_doctor_item_sum_m
+      - name: dws_patient_doctor_item_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_doctor_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_patient_doctor_item_sum_q
+      - name: dws_patient_druglab_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_druglab_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_patient_druglab_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_patient_druglab_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_druglab_sum_d
+      - name: dws_patient_druglab_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_druglab_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_druglab_sum_w
+      - name: dws_patient_druglab_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_druglab_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_patient_druglab_sum_m
+      - name: dws_patient_org_item_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_org_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_patient_org_item_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_patient_org_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_org_item_sum_d
+      - name: dws_patient_org_item_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_org_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_org_item_sum_w
+      - name: dws_patient_org_item_sum_q
+        type: command
+        config:
+          command: echo "skip quarter" # command: bash ${project.dws}/dws_patient_org_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.quarter} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_org_item_sum_m
+      - name: dws_patient_org_item_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_org_item_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_patient_org_item_sum_q
+      - name: dws_patient_treatclass_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_patient_treatclass_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_patient_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_treatclass_sum_d
+      - name: dws_patient_treatclass_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_treatclass_sum_w
+      - name: dws_patient_treatclass_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_patient_treatclass_sum_m
+      - name: dws_patient_visitarea_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_visitarea_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_patient_visitarea_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_patient_visitarea_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_visitarea_sum_d
+      - name: dws_patient_visitarea_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_visitarea_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_visitarea_sum_w
+      - name: dws_patient_visitarea_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_visitarea_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_patient_visitarea_sum_m
+      - name: dws_treatment_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_treatment_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_treatment_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_treatment_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_treatment_sum_d
+      - name: dws_treatment_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_treatment_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_treatment_sum_w
+      - name: dws_treatment_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_treatment_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_treatment_sum_m
+      - name: dws_yd_chargeitem_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_yd_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_yd_chargeitem_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_yd_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_yd_chargeitem_sum_d
+      - name: dws_yd_chargeitem_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_yd_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_yd_chargeitem_sum_w
+      - name: dws_yd_chargeitem_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_yd_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_yd_chargeitem_sum_m
+      - name: dws_yd_drugclass_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_yd_drugclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_yd_drugclass_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_yd_drugclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_yd_drugclass_sum_d
+      - name: dws_yd_drugclass_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_yd_drugclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_yd_drugclass_sum_w
+      - name: dws_yd_drugclass_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_yd_drugclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_yd_drugclass_sum_m
+      - name: dws_yd_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_yd_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_yd_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_yd_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_yd_sum_d
+      - name: dws_yd_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_yd_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_yd_sum_w
+      - name: dws_yd_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_yd_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_yd_sum_m
+      - name: dws_yd_treatclass_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_yd_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+      - name: dws_yd_treatclass_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_yd_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_yd_treatclass_sum_d
+      - name: dws_yd_treatclass_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_yd_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_yd_treatclass_sum_w
+      - name: dws_yd_treatclass_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_yd_treatclass_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_yd_treatclass_sum_m
+      - name: dws_mzapart_days
+        type: command
+        config:
+          command: bash ${project.dws}/dws_mzapart_days.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+      - name: dws_rxapart_days
+        type: command
+        config:
+          command: bash ${project.dws}/dws_rxapart_days.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+    dependsOn:
+      - work_flow_empty_between_first_and_second
+
+  # 一二批次中间的空节点
+  - name: work_flow_empty_between_first_and_second
+    type: command
+    config:
+      command: echo "The work_flow_first has been completed!"
+    dependsOn:
+      - work_flow_first
+
+  # 第一批次
+  - name: work_flow_first
+    type: flow
+    nodes:
+      - name: dws_tag_subject
+        type: command
+        config:
+          command: bash ${project.dws}/dws_tag_subject.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dws_dept_in_patient_tmp
+      - name: app_fk_1visit_groupqty
+        type: command
+        config:
+          command: bash ${project.dws}/app_fk_1visit_groupqty.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dwb_master_info
+          - dwb_charge_detail
+          - dwb_client
+      - name: app_fk_inhospital_family
+        type: command
+        config:
+          command: bash ${project.dws}/app_fk_inhospital_family.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dwb_master_info
+          - dwb_diag
+          - dwb_client
+      - name: app_fk_prescriptlatecharge
+        type: command
+        config:
+          command: bash ${project.dws}/app_fk_prescriptlatecharge.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dwb_charge_detail
+      - name: dws_ybcharge_noresult
+        type: command
+        config:
+          command: bash ${project.dws}/dws_ybcharge_noresult.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dwb_charge_detail
+          - dwb_master_info
+          - dwb_test_result
+      - name: dws_hischarge_noresult
+        type: command
+        config:
+          command: bash ${project.dws}/dws_hischarge_noresult.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dwb_charge_detail
+          - dwb_test_result
+      - name: dws_ybitemqtymoreorder_detail
+        type: command
+        config:
+          command: bash ${project.dws}/dws_ybitemqtymoreorder_detail.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dwb_charge_detail
+          - dwb_master_info
+          - dwb_order
+      - name: dws_hisitemqtymoreorder_detail
+        type: command
+        config:
+          command: bash ${project.dws}/dws_hisitemqtymoreorder_detail.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dwb_charge_detail
+          - dwb_order
+      - name: dws_clientdeath_visit_stati
+        type: command
+        config:
+          command: bash ${project.dws}/dws_clientdeath_visit_stati.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dws_clientdeath_visit_detail
+      - name: dws_clientdeath_visit_detail
+        type: command
+        config:
+          command: bash ${project.dws}/dws_clientdeath_visit_detail.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dwb_master_info
+          - dwb_moca_funeral_deceasedinfo
+      - name: dws_doctordeath_practice_stati
+        type: command
+        config:
+           command: bash ${project.dws}/dws_doctordeath_practice_stati.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dws_doctordeath_practice_detail
+      - name: dws_doctordeath_practice_detail
+        type: command
+        config:
+          command: bash ${project.dws}/dws_doctordeath_practice_detail.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dwb_master_info
+          - dwb_doctor
+          - dwb_moca_funeral_deceasedinfo
+      - name: dws_order_ybitem_diff_stati
+        type: command
+        config:
+          command: bash ${project.dws}/dws_order_ybitem_diff_stati.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dws_order_ybitem_diff_detail
+      - name: dws_order_ybitem_diff_detail
+        type: command
+        config:
+          command: bash ${project.dws}/dws_order_ybitem_diff_detail.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dwb_order
+          - dwb_master_info
+          - dwb_charge_detail
+      - name: dws_order_hisitem_diff_stati
+        type: command
+        config:
+          command: bash ${project.dws}/dws_order_hisitem_diff_stati.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dws_order_hisitem_diff_detail
+      - name: dws_order_hisitem_diff_detail
+        type: command
+        config:
+          command: bash ${project.dws}/dws_order_hisitem_diff_detail.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dwb_charge_detail
+          - dwb_order
+      - name: dws_itemprice_higher_detail
+        type: command
+        config:
+          command: bash ${project.dws}/dws_itemprice_higher_detail.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dwb_charge_detail
+          - dwb_client
+      - name: dws_itemprice_higher_stati
+        type: command
+        config:
+          command: bash ${project.dws}/dws_itemprice_higher_stati.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dws_itemprice_higher_detail
+      - name: dws_west_tcm
+        type: command
+        config:
+          command: bash ${project.dws}/dws_west_tcm.sh -p ${param.project} -i ${param.init} -w ${param.writeLog}
+        dependsOn:
+          - dwb_charge_detail
+          - dwb_doctor
+          - dwb_master_info
+      - name: dws_tag_compare_his_yb
+        type: command
+        config:
+          command: bash ${project.dws}/dws_tag_compare_his_yb.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dwb_master_info
+      - name: dws_newitem_onfile_detail
+        type: command
+        config:
+          command: bash ${project.dws}/dws_newitem_onfile_detail.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dwb_client
+          - dwb_master_info
+          - dwb_charge_detail
+      - name: dws_newitem_onfile_stati
+        type: command
+        config:
+          command: bash ${project.dws}/dws_newitem_onfile_stati.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_newitem_onfile_detail
+      - name: dws_itemexchange1_detail
+        type: command
+        config:
+          command: bash ${project.dws}/dws_itemexchange1_detail.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dwb_charge_detail
+      - name: dws_itemexchange1_diffitem
+        type: command
+        config:
+          command: bash ${project.dws}/dws_itemexchange1_diffitem.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dwb_charge_detail
+      - name: dws_itemexchange2_morecharge
+        type: command
+        config:
+          command: bash ${project.dws}/dws_itemexchange2_morecharge.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dwb_charge_detail
+          - dwb_master_info
+      - name: dws_inhospital_vacation
+        type: command
+        config:
+          command: bash ${project.dws}/dws_inhospital_vacation.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dwb_master_info
+      - name: dws_onebed_morepatients
+        type: command
+        config:
+          command: bash ${project.dws}/dws_onebed_morepatients.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_dept_in_patient_tmp
+      - name: dws_testdate_leavedate
+        type: command
+        config:
+          command: bash ${project.dws}/dws_testdate_leavedate.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dwb_master_info
+          - dwb_test_result
+      - name: dws_clinic_inhospital
+        type: command
+        config:
+          command: bash ${project.dws}/dws_clinic_inhospital.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dwb_master_info
+      - name: dws_inhospital_overlap
+        type: command
+        config:
+          command: bash ${project.dws}/dws_inhospital_overlap.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dwb_master_info
+          - dwb_charge_detail
+      - name: dws_dept_susceptibility_test_tmp
+        type: command
+        config:
+          command: bash ${project.dws}/dws_dept_susceptibility_test_tmp.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - fact_item
+      - name: dws_dept_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_dept_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_main_dept
+          - fact_reg
+          - fact_amount
+          - fact_pay
+          - fact_reg_leave
+          - dws_dept_in_patient_tmp
+          - dws_dept_susceptibility_test_tmp
+      - name: dws_dept_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_dept_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_dept_sum_d
+      - name: dws_dept_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_dept_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_dept_sum_w
+      - name: dws_dept_sum_q
+        type: command
+        config:
+          command: echo "skip quarter" # command: bash ${project.dws}/dws_dept_sum.sh -p ${param.project} -i ${param.init} -d ${param.quarter} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_dept_sum_m
+      - name: dws_dept_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_dept_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_dept_sum_q
+      - name: dws_diaggroup_dept_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_diaggroup_dept_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - fact_diag
+          - fact_diag_item
+          - fact_diag_pay
+      - name: dws_diaggroup_dept_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_diaggroup_dept_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_diaggroup_dept_sum_d
+          - fact_diag_pay
+      - name: dws_diaggroup_dept_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_diaggroup_dept_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_diaggroup_dept_sum_w
+          - fact_diag_pay
+      - name: dws_diaggroup_dept_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_diaggroup_dept_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_diaggroup_dept_sum_m
+          - fact_diag_pay
+      - name: dws_disease_treatdist_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_disease_treatdist.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - fact_diag_item
+          - dwb_label_disease
+      - name: dws_disease_treatdist_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_disease_treatdist.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_disease_treatdist_d
+      - name: dws_disease_treatdist_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_disease_treatdist.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_disease_treatdist_w
+      - name: dws_disease_treatdist_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_disease_treatdist.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_disease_treatdist_m
+      - name: dws_doctor_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_doctor_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_main_doctor
+          - fact_reg
+          - fact_amount
+          - fact_pay
+          - fact_reg_leave
+          - fact_diag
+          - dwb_doctor
+          - dwb_client
+      - name: dws_doctor_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_doctor_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_doctor_sum_d
+      - name: dws_doctor_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_doctor_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_doctor_sum_w
+      - name: dws_doctor_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_doctor_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_doctor_sum_m
+      - name: dws_org_chargeitem_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - fact_item
+          - fact_reg
+      - name: dws_org_chargeitem_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_org_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_chargeitem_sum_d
+      - name: dws_org_chargeitem_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_chargeitem_sum_w
+      - name: dws_org_chargeitem_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_org_chargeitem_sum_m
+      - name: dws_dept_in_patient_tmp
+        type: command
+        config:
+          command: bash ${project.dws}/dws_dept_in_patient_tmp.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dwb_master_info
+          - dwb_bed_info
+      - name: dws_org_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_main_org
+          - fact_reg
+          - fact_amount
+          - fact_pay
+          - fact_reg_leave
+          - dwb_client
+          - dws_dept_in_patient_tmp
+          - dws_dept_susceptibility_test_tmp
+          - dws_inhospital_vacation
+      - name: dws_org_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_org_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_sum_d
+      - name: dws_org_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_sum_w
+      - name: dws_org_sum_q
+        type: command
+        config:
+          command: echo "skip quarter" # command: bash ${project.dws}/dws_org_sum.sh -p ${param.project} -i ${param.init} -d ${param.quarter} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_org_sum_m
+      - name: dws_org_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_org_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_org_sum_q
+      - name: dws_patient_1visit_drugclasssum
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_1visit_drugclasssum.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dwb_charge_detail
+          - dwb_master_info
+          - dwb_client
+      - name: dws_patient_1visit_itemsum
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_1visit_itemsum.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - fact_reg
+          - fact_item
+      - name: dws_patient_all_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_all_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - fact_reg
+          - fact_amount
+          - fact_pay
+          - fact_reg_leave
+          - fact_diag_item
+          - dwb_client
+      - name: dws_patient_all_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_patient_all_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_all_sum_d
+      - name: dws_patient_all_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_all_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_all_sum_w
+      - name: dws_patient_all_sum_q
+        type: command
+        config:
+          command: echo "skip quarter" # command: bash ${project.dws}/dws_patient_all_sum.sh -p ${param.project} -i ${param.init} -d ${param.quarter} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_all_sum_m
+      - name: dws_patient_all_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_all_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_patient_all_sum_q
+      - name: dws_patient_chargeitem_item_qty_tmp
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_chargeitem_item_qty_tmp.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - fact_item
+      - name: dws_patient_chargeitem_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - fact_item
+          - dwb_client
+          - dws_patient_chargeitem_item_qty_tmp
+      - name: dws_patient_chargeitem_sum_w
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_chargeitem_sum_d
+      - name: dws_patient_chargeitem_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_chargeitem_sum_w
+      - name: dws_patient_chargeitem_sum_q
+        type: command
+        config:
+          command: echo "skip quarter" # command: bash ${project.dws}/dws_patient_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.quarter} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_chargeitem_sum_m
+      - name: dws_patient_chargeitem_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_chargeitem_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_patient_chargeitem_sum_q
+      - name: dws_patient_drugclasssum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_drugclasssum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - fact_item
+          - dwb_label_drug
+          - dwb_client
+      - name: dws_patient_drugclasssum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_patient_drugclasssum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_drugclasssum_d
+      - name: dws_patient_drugclasssum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_drugclasssum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_drugclasssum_w
+      - name: dws_patient_drugclasssum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_drugclasssum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_patient_drugclasssum_m
+      - name: dws_patient_mz_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_mz_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - fact_reg
+          - fact_item
+          - fact_amount
+          - fact_pay
+          - fact_diag
+          - fact_surgery
+          - dwb_client
+      - name: dws_patient_mz_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_patient_mz_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_mz_sum_d
+      - name: dws_patient_mz_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_mz_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_mz_sum_w
+      - name: dws_patient_mz_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_mz_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_patient_mz_sum_m
+      - name: dws_patient_org_visit_cnt_tmp
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_org_visit_cnt_tmp.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dwb_master_info
+      - name: dws_patient_org_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_org_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - fact_reg
+          - fact_amount
+          - fact_pay
+          - dwb_client
+          - dws_patient_org_visit_cnt_tmp
+      - name: dws_patient_org_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_patient_org_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_org_sum_d
+      - name: dws_patient_org_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_org_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_org_sum_w
+      - name: dws_patient_org_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_org_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_patient_org_sum_m
+      - name: dws_patient_hoslevel_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_hoslevel_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_main_client
+          - fact_reg
+          - fact_item
+          - fact_diag
+          - fact_amount
+          - fact_pay
+          - dwb_client
+      - name: dws_patient_hoslevel_sum_w
+        type: command
+        config:
+          command: echo "skip week" # command: bash ${project.dws}/dws_patient_hoslevel_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_hoslevel_sum_d
+      - name: dws_patient_hoslevel_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_hoslevel_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_hoslevel_sum_w
+      - name: dws_patient_hoslevel_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_hoslevel_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_patient_hoslevel_sum_m
+      - name: dws_patient_zy_sum_overlap_cnt_tmp
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_zy_sum_overlap_cnt_tmp.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dwb_master_info
+          - dwb_client
+      - name: dws_patient_zy_sum_d
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_zy_sum.sh -p ${param.project} -i ${param.init} -d ${param.day} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - fact_reg
+          - fact_item
+          - fact_amount
+          - fact_pay
+          - fact_diag
+          - fact_surgery
+          - dwb_client
+          - dws_patient_zy_sum_overlap_cnt_tmp
+      - name: dws_patient_zy_sum_w
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_zy_sum.sh -p ${param.project} -i ${param.init} -d ${param.week} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_zy_sum_d
+      - name: dws_patient_zy_sum_m
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_zy_sum.sh -p ${param.project} -i ${param.init} -d ${param.month} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dws_patient_zy_sum_w
+      - name: dws_patient_zy_sum_y
+        type: command
+        config:
+          command: bash ${project.dws}/dws_patient_zy_sum.sh -p ${param.project} -i ${param.init} -d ${param.year} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dws_patient_zy_sum_m
+      - name: dws_zyapart_days
+        type: command
+        config:
+          command: bash ${project.dws}/dws_zyapart_days.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dwb_master_info
+          - dwb_client
+      - name: dws_main_dept
+        type: command
+        config:
+          command: bash ${project.dws}/dws_main_dept.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - fact_reg
+          - fact_reg_leave
+          - fact_amount
+          - fact_pay
+          - fact_diag
+          - fact_surgery
+      - name: dws_main_doctor
+        type: command
+        config:
+          command: bash ${project.dws}/dws_main_doctor.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - fact_reg
+          - fact_reg_leave
+          - fact_amount
+          - fact_pay
+          - fact_diag
+          - fact_surgery
+      - name: dws_main_client
+        type: command
+        config:
+          command: bash ${project.dws}/dws_main_client.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - fact_reg
+          - fact_reg_leave
+          - fact_amount
+          - fact_pay
+          - fact_diag
+          - fact_surgery
+      - name: dws_main_org
+        type: command
+        config:
+          command: bash ${project.dws}/dws_main_org.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - fact_reg
+          - fact_reg_leave
+          - fact_amount
+          - fact_pay
+          - fact_diag
+          - fact_surgery
+      - name: fact_reg
+        type: command
+        config:
+          command: bash ${project.dws}/fact_reg.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dwb_master_info
+          - dwb_client
+      - name: fact_reg_leave
+        type: command
+        config:
+          command: bash ${project.dws}/fact_reg_leave.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dwb_master_info
+      - name: fact_amount
+        type: command
+        config:
+          command: bash ${project.dws}/fact_amount.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dwb_charge_detail
+      - name: fact_item
+        type: command
+        config:
+          command: bash ${project.dws}/fact_item.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dwb_charge_detail
+      - name: fact_pay
+        type: command
+        config:
+          command: bash ${project.dws}/fact_pay.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dwb_settlement
+          - dwb_client
+      - name: fact_diag
+        type: command
+        config:
+          command: bash ${project.dws}/fact_diag.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dwb_diag
+          - dwb_master_info
+          - dwb_label_disease
+      - name: fact_diag_item
+        type: command
+        config:
+          command: bash ${project.dws}/fact_diag_item.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dwb_diag
+          - dwb_charge_detail
+          - dwb_label_drug
+          - dwb_label_disease
+      - name: fact_diag_pay
+        type: command
+        config:
+          command: bash ${project.dws}/fact_diag_pay.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dwb_diag
+          - dwb_settlement
+          - dwb_client
+      - name: fact_surgery
+        type: command
+        config:
+          command: bash ${project.dws}/fact_surgery.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+        dependsOn:
+          - dwb_surgery
+      - name: dwb_master_info
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_master_info.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dwb_diag
+          - dwb_label_drug
+          - dwb_label_treatment
+      - name: dwb_charge_detail
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_charge_detail.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+      - name: dwb_settlement
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_settlement.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+      - name: dwb_diag
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_diag.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+      - name: dwb_surgery
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_surgery.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+      - name: dwb_order
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_order.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+      - name: dwb_bed_info
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_bed_info.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+      - name: dwb_bed_use_info
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_bed_use_info.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+      - name: dwb_test
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_test.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dwb_master_info
+      - name: dwb_test_result
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_test_result.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dwb_master_info
+      - name: dwb_pacs_info
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_pacs_info.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dwb_master_info
+      - name: dwb_pacs_report
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_pacs_report.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+        dependsOn:
+          - dwb_master_info
+      - name: dwb_chronic_patient
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_chronic_patient.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+      - name: dwb_client
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_client.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+      - name: dwb_doctor
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_doctor.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+      - name: dwb_label_drug
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_label_drug.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+      - name: dwb_label_disease
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_label_disease.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+      - name: dwb_label_treatment
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_label_treatment.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate}
+      - name: dwb_moca_funeral_deceasedinfo
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_moca_funeral_deceasedinfo.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+      - name: dwb_blackname
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_blackname.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+      - name: dwb_referral
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_referral.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+      - name: dwb_xnh_family
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_xnh_family.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+      - name: dwb_charge_class
+        type: command
+        config:
+          command: bash ${project.dwb}/dwb_charge_class.sh -p ${param.project} -i ${param.init} -s${param.startDate} -e${param.endDate} -w ${param.writeLog}
+    dependsOn:
+      - flow_center
+
+  - name: flow_center
+    type: command
+    config:
+      command: bash ${project.warehouse}/send_mail/send.sh ${param.project} "email_task_logs_ods" "ods任务清单" ${param.send}
+    dependsOn:
+      - ods_yb_flow
+      - ods_xnh_flow
+      - ods_his_flow
+      - ods_other_flow
+
+  - name: ods_other_flow
+    type: flow
+    config:
+      prop: value
+    nodes:
+      - name: ods_moca_funeral_deceasedinfo
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_moca_funeral_deceasedinfo
+      - name: ods_item_price
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_item_price
+      # - name: ods_ga_household_regist
+      #   type: command
+      #   config:
+      #      command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_ga_household_regist
+      - name: ods_yd_master_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yd_master_info
+      - name: ods_yd_charge_detail
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yd_charge_detail
+      - name: ods_yd_drug_inbound
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yd_drug_inbound
+      - name: ods_yd_drug_inbound_detail
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yd_drug_inbound_detail
+      - name: ods_yd_drug_inventory
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yd_drug_inventory
+      - name: ods_yd_drug_inventory_detail
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yd_drug_inventory_detail
+      - name: ods_yd_drug_outbound
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yd_drug_outbound
+      - name: ods_yd_drug_outbound_detail
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yd_drug_outbound_detail
+    dependsOn:
+      - dcg_flow
+  
+  - name: ods_yb_flow
+    type: flow
+    config:
+      prop: value
+    nodes:
+      - name: ods_yb_bed_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_bed_info
+      - name: ods_yb_blackname
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_blackname
+      - name: ods_yb_charge_class
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_charge_class
+      - name: ods_yb_charge_detail
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_charge_detail
+      - name: ods_yb_chronic_patient_detail
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_chronic_patient_detail
+      - name: ods_yb_client
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_client
+      - name: ods_yb_client_fee
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_client_fee
+      - name: ods_yb_department
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_department
+      - name: ods_yb_diag
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_diag
+      - name: ods_yb_diaggroup
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_diaggroup
+      - name: ods_yb_dict
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_dict
+      - name: ods_yb_doctor
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_doctor
+      - name: ods_yb_drug
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_drug
+      - name: ods_yb_icd
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_icd
+      - name: ods_yb_icu_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_icu_info
+      - name: ods_yb_master_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_master_info
+      - name: ods_yb_organization
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_organization
+      - name: ods_yb_referral
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_referral
+      - name: ods_yb_settlement
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_settlement
+      - name: ods_yb_surgery
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_surgery
+      - name: ods_yb_treatment
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_treatment
+      - name: ods_yb_zy_master_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_yb_zy_master_info
+    dependsOn:
+      - dcg_flow
+
+  - name: ods_xnh_flow
+    type: flow
+    config:
+      prop: value
+    nodes:
+      - name: ods_xnh_chronic_patient_detail
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_chronic_patient_detail
+      - name: ods_xnh_department
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_department
+      - name: ods_xnh_diaggroup
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_diaggroup
+      - name: ods_xnh_dict
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_dict
+      - name: ods_xnh_doctor
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_doctor
+      - name: ods_xnh_drug
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_drug
+      - name: ods_xnh_fam_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_fam_info
+      - name: ods_xnh_fam_insure
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_fam_insure
+      - name: ods_xnh_icd
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_icd
+      - name: ods_xnh_mz_charge_class
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_mz_charge_class
+      - name: ods_xnh_mz_charge_detail
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_mz_charge_detail
+      - name: ods_xnh_mz_master_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_mz_master_info
+      - name: ods_xnh_mz_settlement
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_mz_settlement
+      - name: ods_xnh_organization
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_organization
+      - name: ods_xnh_personal_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_personal_info
+      - name: ods_xnh_personal_insure
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_personal_insure
+      - name: ods_xnh_referral
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_referral
+      - name: ods_xnh_serious_ill_compensate
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_serious_ill_compensate
+      - name: ods_xnh_treatment
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_treatment
+      - name: ods_xnh_zy_charge_class
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_zy_charge_class
+      - name: ods_xnh_zy_charge_detail
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_zy_charge_detail
+      - name: ods_xnh_zy_master_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_zy_master_info
+      - name: ods_xnh_zy_settlement
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_zy_settlement
+      - name: ods_xnh_mz_diag
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_mz_diag
+      - name: ods_xnh_zy_diag
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_xnh_zy_diag
+    dependsOn:
+      - dcg_flow
+
+  - name: ods_his_flow
+    type: flow
+    config:
+      prop: value
+    nodes:
+      - name: ods_his_consult
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_consult
+      - name: ods_his_death_record
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_death_record
+      - name: ods_his_depttrant
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_depttrant
+      - name: ods_his_dict
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_dict
+      - name: ods_his_facility
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_facility
+      - name: ods_his_medical_equipment
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_medical_equipment
+      - name: ods_his_mz_drugdispen_detail
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_mz_drugdispen_detail
+      - name: ods_his_mz_drugdispen_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_mz_drugdispen_info
+      - name: ods_his_zy_disease_procedure1
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_disease_procedure1
+      - name: ods_his_order_chargemapping
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_order_chargemapping
+      - name: ods_his_doctor
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_doctor
+      - name: ods_his_client
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_client
+      - name: ods_his_mz_diag
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_mz_diag
+      - name: ods_his_zy_diag
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_diag
+      - name: ods_his_diaggroup
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_diaggroup
+      - name: ods_his_drug
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_drug
+      - name: ods_his_drug_inbound
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_drug_inbound
+      - name: ods_his_drug_inbound_detail
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_drug_inbound_detail
+      - name: ods_his_drug_inventory
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_drug_inventory
+      - name: ods_his_drug_inventory_detail
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_drug_inventory_detail
+      - name: ods_his_drug_outbound
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_drug_outbound
+      - name: ods_his_drug_outbound_detail
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_drug_outbound_detail
+      - name: ods_his_icd
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_icd
+      - name: ods_his_itemmapping_yb
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_itemmapping_yb
+      - name: ods_his_mz_case_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_mz_case_info
+      - name: ods_his_mz_charge_class
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_mz_charge_class
+      - name: ods_his_mz_charge_detail
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_mz_charge_detail
+      - name: ods_his_mz_ivdrip_execute
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_mz_ivdrip_execute
+      - name: ods_his_mz_ivdrip_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_mz_ivdrip_info
+      - name: ods_his_mz_master_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_mz_master_info
+      - name: ods_his_mz_prescription
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_mz_prescription
+      - name: ods_his_mz_settlement
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_mz_settlement
+      - name: ods_his_mz_surgery
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_mz_surgery
+      - name: ods_his_operation
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_operation
+      - name: ods_his_pacs_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_pacs_info
+      - name: ods_his_pacs_report
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_pacs_report
+      - name: ods_his_pathology
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_pathology
+      - name: ods_his_referral
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_referral
+      - name: ods_his_test
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_test
+      - name: ods_his_test_result
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_test_result
+      - name: ods_his_treatment
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_treatment
+      - name: ods_his_vaccinum
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_vaccinum
+      - name: ods_his_ward_drugdispen
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_ward_drugdispen
+      - name: ods_his_zy_24in_out
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_24in_out
+      - name: ods_his_zy_admmision
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_admmision
+      - name: ods_his_zy_bed_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_bed_info
+      - name: ods_his_zy_bed_use_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_bed_use_info
+      - name: ods_his_zy_blood_useinfo
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_blood_useinfo
+      - name: ods_his_zy_bloodsugar
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_bloodsugar
+      - name: ods_his_zy_body_temperature
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_body_temperature
+      - name: ods_his_zy_charge_class
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_charge_class
+      - name: ods_his_zy_charge_detail
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_charge_detail
+      - name: ods_his_zy_death_record
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_death_record
+      - name: ods_his_zy_discharge
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_discharge
+      - name: ods_his_zy_discharge_appraisal
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_discharge_appraisal
+      - name: ods_his_zy_disease_procedure
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_disease_procedure
+      - name: ods_his_zy_expensive_consume
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_expensive_consume
+      - name: ods_his_zy_liquid_volume
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_liquid_volume
+      - name: ods_his_zy_master_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_master_info
+      - name: ods_his_zy_nursing
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_nursing
+      - name: ods_his_zy_nursing_appraisal
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_nursing_appraisal
+      - name: ods_his_zy_nursing_serious
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_nursing_serious
+      - name: ods_his_zy_order
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_order
+      - name: ods_his_zy_settlement
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_settlement
+      - name: ods_his_zy_surgery
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_surgery
+      - name: ods_his_zy_surgerynursing
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} ods_his_zy_surgerynursing
+    dependsOn:
+      - dcg_flow
+
+  - name: dcg_flow
+    type: flow
+    config:
+      prop: value
+    nodes:
+      - name: dcg_yb_master_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} dcg_yb_master_info
+      - name: dcg_his_mz_master_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} dcg_his_mz_master_info
+      - name: dcg_his_zy_master_info
+        type: command
+        config:
+           command: bash ${project.ods}/core_ods_executor.sh -p ${param.project} -i ${param.init} dcg_his_zy_master_info
+    dependsOn:
+      - std_flow
+      - init_flow
+
+  - name: std_flow
+    type: flow
+    config:
+      prop: value
+    nodes:
+      - name: std_wj_itemcatalog
+        type: command
+        config:
+           command: bash ${project.share}/std_wj_itemcatalog.sh -p ${param.project} -i ${param.init}
+      - name: std_org_agreement
+        type: command
+        config:
+           command: bash ${project.share}/std_org_agreement.sh -p ${param.project} -i ${param.init}
+      - name: std_hoslevel_fundpayprop
+        type: command
+        config:
+           command: bash ${project.share}/std_hoslevel_fundpayprop.sh -p ${param.project} -i ${param.init}
+      - name: std_atc
+        type: command
+        config:
+           command: bash ${project.share}/std_atc.sh -p ${param.project} -i ${param.init}
+      - name: std_department
+        type: command
+        config:
+           command: bash ${project.share}/std_department.sh -p ${param.project} -i ${param.init}
+      - name: std_diaggroup
+        type: command
+        config:
+           command: bash ${project.share}/std_diaggroup.sh -p ${param.project} -i ${param.init}
+      - name: std_dict
+        type: command
+        config:
+           command: bash ${project.share}/std_dict.sh -p ${param.project} -i ${param.init}
+      - name: std_drug_info
+        type: command
+        config:
+           command: bash ${project.share}/std_drug_info.sh -p ${param.project} -i ${param.init}
+      - name: std_drug_property
+        type: command
+        config:
+           command: bash ${project.share}/std_drug_property.sh -p ${param.project} -i ${param.init}
+      - name: std_druggroup
+        type: command
+        config:
+           command: bash ${project.share}/std_druggroup.sh -p ${param.project} -i ${param.init}
+      - name: std_icd_surgery
+        type: command
+        config:
+           command: bash ${project.share}/std_icd_surgery.sh -p ${param.project} -i ${param.init}
+      - name: std_icd
+        type: command
+        config:
+           command: bash ${project.share}/std_icd.sh -p ${param.project} -i ${param.init}
+      - name: std_organization
+        type: command
+        config:
+           command: bash ${project.share}/std_organization.sh -p ${param.project} -i ${param.init}
+      - name: std_pathology
+        type: command
+        config:
+           command: bash ${project.share}/std_pathology.sh -p ${param.project} -i ${param.init}
+      - name: std_treatgroup
+        type: command
+        config:
+           command: bash ${project.share}/std_treatgroup.sh -p ${param.project} -i ${param.init}
+      - name: std_treatment
+        type: command
+        config:
+           command: bash ${project.share}/std_treatment.sh -p ${param.project} -i ${param.init}
+    dependsOn:
+      - start
+  
+  - name: init_flow
+    type: flow
+    config:
+      prop: value
+    nodes:
+      - name: ods_mapping_dept
+        type: command
+        config:
+           command: bash ${project.share}/ods_mapping_dept.sh -p ${param.project} -i ${param.init}
+      - name: ods_mapping_diag
+        type: command
+        config:
+           command: bash ${project.share}/ods_mapping_diag.sh -p ${param.project} -i ${param.init}
+      - name: ods_mapping_dict
+        type: command
+        config:
+           command: bash ${project.share}/ods_mapping_dict.sh -p ${param.project} -i ${param.init}
+      - name: ods_mapping_item
+        type: command
+        config:
+           command: bash ${project.share}/ods_mapping_item.sh -p ${param.project} -i ${param.init}
+      - name: ods_mapping_item2
+        type: command
+        config:
+           command: bash ${project.share}/ods_mapping_item2.sh -p ${param.project} -i ${param.init}
+      - name: ods_mapping_item3
+        type: command
+        config:
+           command: bash ${project.share}/ods_mapping_item3.sh -p ${param.project} -i ${param.init}
+      - name: ods_mapping_org
+        type: command
+        config:
+           command: bash ${project.share}/ods_mapping_org.sh -p ${param.project} -i ${param.init}
+      - name: dim_date
+        type: command
+        config:
+           command: bash ${project.dws}/dim_date.sh -p ${param.project} -i ${param.init}
+      - name: dim_holidays
+        type: command
+        config:
+           command: bash ${project.dws}/dim_holidays.sh -p ${param.project} -i ${param.init}
+    dependsOn:
+      - start
+
+  - name: start
+    type: command
+    config:
+      command: echo "start..."
+      command.1: pwd
+      command.2: whoami
+      command.3: hostname
+      command.4: 'echo "param.date: ${param.date}"'
+      command.5: 'echo "参数校验: 必须输入param.project和一种[param.day, param.week, param.month, param.quarter, param.year]'
+      command.6: bash ${project.warehouse}/arguments_check.sh -p ${param.project} "${param.day}" "${param.week}" "${param.month}" "${param.quarter}" "${param.year}"
+      command.7: bash ${project.warehouse}/project_initialize.sh -p ${param.project} -i ${param.init}
