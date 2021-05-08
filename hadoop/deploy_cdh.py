@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # coding: utf-8
 
+# deploy cdh 5.16.2
+
 import os
 import logging
 from fabric import Connection
