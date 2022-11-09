@@ -103,7 +103,7 @@ tar -zxvf /home/soft/jdk-8u102-linux-x64.tar.gz -C /usr/java &&
 
 echo '
 JAVA_HOME="/usr/java/jdk1.8.0_102"
-PATH=".:$PATH:$JAVA_HOME/bin:"
+PATH="$PATH:$JAVA_HOME/bin"
 export JAVA_HOME PATH
 ' >> /etc/profile &&
 source /etc/profile &&
